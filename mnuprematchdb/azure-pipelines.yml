@@ -29,6 +29,8 @@ stages:
                 -backend-config="container_name=tfstate" `
                 -backend-config="key=prod.terraform.tfstate"
             displayName: "Terraform Init"
+            # FIX: Pointing Terraform to your specific subfolder
+            workingDirectory: "$(System.DefaultWorkingDirectory)/mnuprematchdb"
             env:
               ARM_CLIENT_ID: $(AZURE_CLIENT_ID)
               ARM_CLIENT_SECRET: $(AZURE_CLIENT_SECRET)
@@ -38,6 +40,8 @@ stages:
           - pwsh: |
               terraform apply -auto-approve
             displayName: "Terraform Apply"
+            # FIX: Pointing Terraform to your specific subfolder
+            workingDirectory: "$(System.DefaultWorkingDirectory)/mnuprematchdb"
             env:
               ARM_CLIENT_ID: $(AZURE_CLIENT_ID)
               ARM_CLIENT_SECRET: $(AZURE_CLIENT_SECRET)
@@ -54,7 +58,8 @@ stages:
         steps:
           - task: ArchiveFiles@2
             inputs:
-              rootFolderOrFile: "$(Build.SourcesDirectory)"
+              # FIX: Zipping the contents of the subfolder, not the whole repo
+              rootFolderOrFile: "$(Build.SourcesDirectory)/mnuprematchdb"
               includeRootFolder: false
               archiveType: "zip"
               archiveFile: "$(Build.ArtifactStagingDirectory)/function.zip"
@@ -78,6 +83,7 @@ stages:
         steps:
           - task: AzureStaticWebApp@0
             inputs:
-              app_location: "/"
-              output_location: "/"
+              # FIX: Pointing the deployment to look inside the subfolder for your index.html
+              app_location: "/mnuprematchdb"
+              output_location: "/mnuprematchdb"
               azure_static_web_apps_api_token: $(SWA_DEPLOYMENT_TOKEN)
