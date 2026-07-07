@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Manchester United Matchday Hub</title>
+    <style>
+        :root {
+            --mu-red: #DA291C;
+            --mu-black: #000000;
+            --mu-white: #FFFFFF;
+            --mu-dark-grey: #1A1A1A;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: var(--mu-black);
+            color: var(--mu-white);
+            margin: 0;
+            padding: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+        }
+
+        .container {
+            text-align: center;
+            background: var(--mu-dark-grey);
+            padding: 2.5rem;
+            border-radius: 12px;
+            box-shadow: 0 8px 24px rgba(218, 41, 28, 0.2);
+            border-top: 5px solid var(--mu-red);
+            width: 90%;
+            max-width: 500px;
+        }
+
+        h1 {
+            font-size: 1.8rem;
+            margin-bottom: 0.5rem;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .badge {
+            background-color: var(--mu-red);
+            color: var(--mu-white);
+            padding: 0.25rem 0.75rem;
+            border-radius: 20px;
+            font-size: 0.8rem;
+            font-weight: bold;
+            display: inline-block;
+            margin-bottom: 1.5rem;
+        }
+
+        .match-details {
+            font-size: 1.2rem;
+            margin: 1.5rem 0;
+        }
+
+        .opponent {
+            font-size: 2rem;
+            font-weight: bold;
+            color: var(--mu-white);
+            margin: 0.5rem 0;
+        }
+
+        .meta-info {
+            color: #AAAAAA;
+            font-size: 0.9rem;
+            margin-top: 1rem;
+        }
+
+        .loading {
+            color: #888888;
+            font-style: italic;
+        }
+    </style>
+</head>
+
+<body>
+
+    <div class="container">
+        <div class="badge" id="competition">GGMU</div>
+        <h1>Next Match</h1>
+
+        <div id="dashboard-content">
+            <p class="loading">Fetching latest fixture data...</p>
+        </div>
+    </div>
+
+    <script>
+        // Azure DevOps will automatically inject the real data table URL here during deployment
+        const tableSasUrl = "__TABLE_SAS_URL__";
+
+        async function fetchMatchData() {
+            const contentDiv = document.getElementById('dashboard-content');
+            const compBadge = document.getElementById('competition');
+
+            try {
+                // Querying the specific row we saved (PartitionKey='NextMatch', RowKey='1')
+                // We add the JSON format headers required by Azure Storage REST API
+                const response = await fetch(`${tableSasUrl}(PartitionKey='NextMatch',RowKey='1')`, {
+                    headers: { 'Accept': 'application/json;odata=nometadata' }
+                });
+
+                if (!response.ok) throw new Error('Data not found');
+
+                const data = await response.json();
+
+                // Parse the match date to local format
+                const matchDate = new Date(data.MatchDate).toLocaleString([], {
+                    weekday: 'short', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'
+                });
+
+                compBadge.innerText = data.Competition;
+
+                contentDiv.innerHTML = `
+                    <div class="meta-info">${data.IsHomeMatch ? 'HOME' : 'AWAY'} MATCH</div>
+                    <div class="opponent">vs ${data.Opponent}</div>
+                    <div class="match-details">${matchDate}</div>
+                    <div class="meta-info">📍 ${data.Venue}</div>
+                `;
+
+            } catch (error) {
+                console.error(error);
+                contentDiv.innerHTML = `<p style="color: var(--mu-red);">Match center temporarily unavailable</p>`;
+            }
+        }
+
+        // Run on page load
+        if (tableSasUrl !== "__TABLE_SAS_URL__") {
+            fetchMatchData();
+        } else {
+            // Local fallback text for testing before CI/CD handles deployment
+            document.getElementById('dashboard-content').innerHTML = `
+                <div class="meta-info">LOCAL PREVIEW</div>
+                <div class="opponent">vs Opposition FC</div>
+                <div class="match-details">Saturday, 3:00 PM</div>
+                <div class="meta-info">📍 Old Trafford</div>
+            `;
+        }
+    </script>
+</body>
+
+</html>
