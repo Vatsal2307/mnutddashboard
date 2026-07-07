@@ -50,7 +50,7 @@ resource "azurerm_service_plan" "asp" {
 
 # 4. The PowerShell Azure Function App
 resource "azurerm_windows_function_app" "func" {
-  name                       = "func-manutd-datafetcher-${random_id.suffix.hex}"
+  name                       = "func-manutd-datafetcher-2307"
   resource_group_name        = azurerm_resource_group.rg.name
   location                   = azurerm_resource_group.rg.location
   storage_account_name       = azurerm_storage_account.sa.name

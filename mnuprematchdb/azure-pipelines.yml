@@ -1,0 +1,83 @@
+trigger:
+  branches:
+    include:
+      - testbranch
+
+pool:
+  vmImage: "windows-latest"
+
+variables:
+  - group: manutd-dashboard-secrets
+
+stages:
+  # STAGE 1: Provision Cloud Infrastructure via Terraform
+  - stage: InfraDeployment
+    displayName: "Deploy Azure Infrastructure"
+    jobs:
+      - job: Terraform
+        displayName: "Run Terraform Apply"
+        steps:
+          - task: TerraformInstaller@0
+            inputs:
+              terraformVersion: "latest"
+
+          - pwsh: |
+              echo "Initializing Terraform Backend..."
+              terraform init `
+                -backend-config="resource_group_name=rg-terraform-backend" `
+                -backend-config="storage_account_name=samanutdtfstate2307" `
+                -backend-config="container_name=tfstate" `
+                -backend-config="key=prod.terraform.tfstate"
+            displayName: "Terraform Init"
+            env:
+              ARM_CLIENT_ID: $(AZURE_CLIENT_ID)
+              ARM_CLIENT_SECRET: $(AZURE_CLIENT_SECRET)
+              ARM_TENANT_ID: $(AZURE_TENANT_ID)
+              ARM_SUBSCRIPTION_ID: $(AZURE_SUBSCRIPTION_ID)
+
+          - pwsh: |
+              terraform apply -auto-approve
+            displayName: "Terraform Apply"
+            env:
+              ARM_CLIENT_ID: $(AZURE_CLIENT_ID)
+              ARM_CLIENT_SECRET: $(AZURE_CLIENT_SECRET)
+              ARM_TENANT_ID: $(AZURE_TENANT_ID)
+              ARM_SUBSCRIPTION_ID: $(AZURE_SUBSCRIPTION_ID)
+
+  # STAGE 2: Package and Deploy PowerShell Function App
+  - stage: BackendDeployment
+    displayName: "Deploy PowerShell Backend"
+    dependsOn: InfraDeployment
+    jobs:
+      - job: DeployFunction
+        displayName: "Package & Push Function"
+        steps:
+          - task: ArchiveFiles@2
+            inputs:
+              rootFolderOrFile: "$(Build.SourcesDirectory)"
+              includeRootFolder: false
+              archiveType: "zip"
+              archiveFile: "$(Build.ArtifactStagingDirectory)/function.zip"
+              replaceExistingArchive: true
+
+          - task: AzureFunctionApp@1
+            inputs:
+              azureSubscription: "sp-manutd-terraform-cicd"
+              appType: "functionApp"
+              appName: "func-manutd-datafetcher-2307"
+              package: "$(Build.ArtifactStagingDirectory)/function.zip"
+              deploymentMethod: "zipDeploy"
+
+  # STAGE 3: Deploy Frontend Static Web App
+  - stage: FrontendDeployment
+    displayName: "Deploy Dashboard Frontend"
+    dependsOn: BackendDeployment
+    jobs:
+      - job: DeploySWA
+        displayName: "Push HTML to Static Web App"
+        steps:
+          - task: AzureStaticWebApp@0
+            inputs:
+              app_location: "/"
+              output_location: "/"
+              azure_static_web_apps_api_token: $(SWA_DEPLOYMENT_TOKEN)
