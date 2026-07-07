@@ -29,7 +29,6 @@ stages:
                 -backend-config="container_name=tfstate" `
                 -backend-config="key=prod.terraform.tfstate"
             displayName: "Terraform Init"
-            # FIX: Pointing Terraform to your specific subfolder
             workingDirectory: "$(System.DefaultWorkingDirectory)/mnuprematchdb"
             env:
               ARM_CLIENT_ID: $(AZURE_CLIENT_ID)
@@ -40,7 +39,6 @@ stages:
           - pwsh: |
               terraform apply -auto-approve
             displayName: "Terraform Apply"
-            # FIX: Pointing Terraform to your specific subfolder
             workingDirectory: "$(System.DefaultWorkingDirectory)/mnuprematchdb"
             env:
               ARM_CLIENT_ID: $(AZURE_CLIENT_ID)
@@ -58,20 +56,20 @@ stages:
         steps:
           - task: ArchiveFiles@2
             inputs:
-              # FIX: Zipping the contents of the subfolder, not the whole repo
               rootFolderOrFile: "$(Build.SourcesDirectory)/mnuprematchdb"
               includeRootFolder: false
               archiveType: "zip"
               archiveFile: "$(Build.ArtifactStagingDirectory)/function.zip"
               replaceExistingArchive: true
 
-          - task: AzureFunctionApp@1
-            inputs:
-              azureSubscription: "sp-manutd-terraform-cicd"
-              appType: "functionApp"
-              appName: "func-manutd-datafetcher-2307"
-              package: "$(Build.ArtifactStagingDirectory)/function.zip"
-              deploymentMethod: "zipDeploy"
+          - pwsh: |
+              echo "Logging into Azure..."
+              az login --service-principal -u $(AZURE_CLIENT_ID) -p $(AZURE_CLIENT_SECRET) --tenant $(AZURE_TENANT_ID)
+              az account set --subscription $(AZURE_SUBSCRIPTION_ID)
+
+              echo "Pushing zip file to Function App..."
+              az functionapp deployment source config-zip -g "rg-manutd-dashboard-prod" -n "func-manutd-datafetcher-2307" --src "$(Build.ArtifactStagingDirectory)/function.zip"
+            displayName: "Deploy via Azure CLI"
 
   # STAGE 3: Deploy Frontend Static Web App
   - stage: FrontendDeployment
@@ -83,7 +81,6 @@ stages:
         steps:
           - task: AzureStaticWebApp@0
             inputs:
-              # FIX: Pointing the deployment to look inside the subfolder for your index.html
               app_location: "/mnuprematchdb"
               output_location: "/mnuprematchdb"
               azure_static_web_apps_api_token: $(SWA_DEPLOYMENT_TOKEN)
