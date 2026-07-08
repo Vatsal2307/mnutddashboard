@@ -61,6 +61,11 @@ resource "azurerm_windows_function_app" "func" {
     application_stack {
       powershell_core_version = "7.2"
     }
+    
+    # FIX: Allow the Azure Portal to send manual test requests
+    cors {
+      allowed_origins = ["https://portal.azure.com"]
+    }
   }
 
   app_settings = {
