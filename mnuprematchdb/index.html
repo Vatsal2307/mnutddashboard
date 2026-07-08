@@ -76,6 +76,11 @@
             color: #888888;
             font-style: italic;
         }
+
+        .error {
+            color: var(--mu-red);
+            font-weight: bold;
+        }
     </style>
 </head>
 
@@ -91,29 +96,34 @@
     </div>
 
     <script>
-        // Azure DevOps will automatically inject the real data table URL here during deployment
-        const tableSasUrl = "__TABLE_SAS_URL__";
+        // 1. The exact endpoint for your specific Azure Storage Table
+        const tableBaseUrl = "https://samanutddash2307.table.core.windows.net/manutdfixtures";
+
+        // 2. PASTE YOUR AZURE SAS TOKEN HERE (Ensure the ? remains at the very beginning)
+        const sasToken = "sv=2026-02-06&ss=t&srt=o&sp=r&se=2029-07-08T12:53:15Z&st=2026-07-08T04:38:15Z&spr=https&sig=gWKHVBV3ldNq73kUaqjELIdgF50msWlw%2Bl9XNAOMBk8%3D";
 
         async function fetchMatchData() {
             const contentDiv = document.getElementById('dashboard-content');
             const compBadge = document.getElementById('competition');
 
             try {
-                // Querying the specific row we saved (PartitionKey='NextMatch', RowKey='1')
-                // We add the JSON format headers required by Azure Storage REST API
-                const response = await fetch(`${tableSasUrl}(PartitionKey='NextMatch',RowKey='1')`, {
+                // Fetch the exact row where PartitionKey='NextMatch' and RowKey='1'
+                const response = await fetch(`${tableBaseUrl}(PartitionKey='NextMatch',RowKey='1')${sasToken}`, {
                     headers: { 'Accept': 'application/json;odata=nometadata' }
                 });
 
-                if (!response.ok) throw new Error('Data not found');
+                if (!response.ok) {
+                    throw new Error(`Data access failed. Status: ${response.status}`);
+                }
 
                 const data = await response.json();
 
-                // Parse the match date to local format
+                // Parse the match date format
                 const matchDate = new Date(data.MatchDate).toLocaleString([], {
                     weekday: 'short', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'
                 });
 
+                // Update the UI with the live data
                 compBadge.innerText = data.Competition;
 
                 contentDiv.innerHTML = `
@@ -124,23 +134,16 @@
                 `;
 
             } catch (error) {
-                console.error(error);
-                contentDiv.innerHTML = `<p style="color: var(--mu-red);">Match center temporarily unavailable</p>`;
+                console.error("Dashboard Error:", error);
+                contentDiv.innerHTML = `
+                    <p class="error">Match center temporarily unavailable</p>
+                    <p style="font-size: 0.8rem; color: #888;">Ensure your SAS token is correct and not expired.</p>
+                `;
             }
         }
 
-        // Run on page load
-        if (tableSasUrl !== "__TABLE_SAS_URL__") {
-            fetchMatchData();
-        } else {
-            // Local fallback text for testing before CI/CD handles deployment
-            document.getElementById('dashboard-content').innerHTML = `
-                <div class="meta-info">LOCAL PREVIEW</div>
-                <div class="opponent">vs Opposition FC</div>
-                <div class="match-details">Saturday, 3:00 PM</div>
-                <div class="meta-info">📍 Old Trafford</div>
-            `;
-        }
+        // Run the fetch cycle immediately when the page loads
+        fetchMatchData();
     </script>
 </body>
 
