@@ -78,9 +78,13 @@ stages:
     jobs:
       - job: DeploySWA
         displayName: "Push HTML to Static Web App"
+        pool:
+          vmImage: "ubuntu-latest" # Overrides global pool: Microsoft's SWA task strictly requires a Linux VM
         steps:
+          - checkout: self # Ensures the code is pulled onto this new Linux VM
           - task: AzureStaticWebApp@0
             inputs:
               app_location: "/mnuprematchdb"
-              output_location: "/mnuprematchdb"
+              output_location: "" # Output is the root of app_location for plain HTML
+              skip_app_build: true # Bypasses the build engine since we are using plain HTML
               azure_static_web_apps_api_token: $(SWA_DEPLOYMENT_TOKEN)
