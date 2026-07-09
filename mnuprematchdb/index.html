@@ -11,7 +11,6 @@
             --mu-black: #000000;
             --mu-white: #FFFFFF;
             --mu-dark-grey: #1A1A1A;
-            --mu-grey: #333333;
         }
 
         body {
@@ -122,18 +121,25 @@
     </div>
 
     <script>
-        // CONFIGURATION: Replace these with your Azure Storage details
+        /* CONFIGURATION: IMPORTANT - REPLACE THE VALUES BELOW */
+
+        // UPDATE THIS: Replace 'YOUR_STORAGE_ACCOUNT_NAME' with your actual account name (e.g., samanutddash1234)
         const tableBaseUrl = "https://YOUR_STORAGE_ACCOUNT_NAME.table.core.windows.net/manutdfixtures";
-        const sasToken = "?YOUR_SAS_TOKEN_HERE";
+
+        // UPDATE THIS: Paste your actual SAS token (must include the leading ?)
+        const sasToken = "?sv=...";
 
         async function init() {
             try {
-                // Fetch top 1 newest entity
+                // Fetch the newest entity by querying the top 1
                 const url = `${tableBaseUrl}()?$filter=PartitionKey eq 'NextMatch'&$top=1&${sasToken.substring(1)}`;
                 const response = await fetch(url, { headers: { 'Accept': 'application/json;odata=nometadata' } });
+
+                if (!response.ok) throw new Error("Check your Storage Account Name/SAS Token configuration.");
+
                 const data = (await response.json()).value[0];
 
-                if (!data) throw new Error("No data found");
+                if (!data) throw new Error("No dashboard data found in storage table.");
 
                 // 1. Update Hero Card
                 document.getElementById('hero-content').innerHTML = `
@@ -159,6 +165,7 @@
                 `).join('');
 
             } catch (err) {
+                console.error(err);
                 document.getElementById('main-ui').innerHTML = `<p class="loading">Error loading dashboard: ${err.message}</p>`;
             }
         }
