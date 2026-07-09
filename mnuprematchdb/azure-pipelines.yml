@@ -69,6 +69,9 @@ stages:
 
               echo "Pushing zip file to Function App..."
               az functionapp deployment source config-zip -g "rg-manutd-dashboard-prod" -n "func-manutd-datafetcher-2307" --src "$(Build.ArtifactStagingDirectory)/function.zip"
+
+              echo "Injecting Football API Key into App Settings..."
+              az functionapp config appsettings set -g "rg-manutd-dashboard-prod" -n "func-manutd-datafetcher-2307" --settings API_FOOTBALL_KEY="$(API_FOOTBALL_KEY)"
             displayName: "Deploy via Azure CLI"
 
   # STAGE 3: Deploy Frontend Static Web App
