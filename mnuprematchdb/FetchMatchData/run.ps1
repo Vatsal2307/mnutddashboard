@@ -75,8 +75,21 @@ $venueName = "Away Stadium"
 if ($isNextHome) {
     $venueName = "Old Trafford"
 }
-elseif ($nextMatch.venue) {
-    $venueName = $nextMatch.venue
+elseif ($nextMatch) {
+    # Fetch the away team's details to get their stadium name
+    $awayTeamId = $nextMatch.awayTeam.id
+    try {
+        $awayTeamUri = "https://api.football-data.org/v4/teams/$awayTeamId"
+        $awayTeamResponse = Invoke-RestMethod -Uri $awayTeamUri -Headers $headers -Method Get -TimeoutSec 15
+        if ($awayTeamResponse.venue) {
+            $venueName = $awayTeamResponse.venue
+        }
+        Write-Output "Away venue resolved: $venueName"
+    }
+    catch {
+        Write-Warning "Could not fetch away team venue: $_"
+        # Falls back to "Away Stadium" already set above
+    }
 }
 
 # Final Data Assembly
