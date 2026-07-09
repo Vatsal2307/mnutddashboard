@@ -9,13 +9,16 @@ $headers = @{
 
 Write-Output "Starting Manchester United Matchday fetcher..."
 
-$uri = "https://v3.football.api-sports.io/fixtures?team=$teamId&next=1"
+# THE WORKAROUND: Instead of 'next=1', we ask for a date range (which is allowed on the Free Plan)
+$today = (Get-Date).ToString("yyyy-MM-dd")
+$future = (Get-Date).AddMonths(12).ToString("yyyy-MM-dd")
+$uri = "https://v3.football.api-sports.io/fixtures?team=$teamId&from=$today&to=$future"
+
 try {
     $response = Invoke-RestMethod -Uri $uri -Headers $headers -Method Get -TimeoutSec 15
     Write-Output "API payload received. Checking for internal errors..."
     
-    # Force the logs to show if the API rejected our key silently
-    if ($response.errors) {
+    if ($response.errors -and $response.errors.Count -gt 0) {
         Write-Warning "API-Sports Error: $($response.errors | ConvertTo-Json -Compress)"
     }
 }
@@ -24,8 +27,7 @@ catch {
     return
 }
 
-# 1. Define a robust fallback record 
-# This ensures the database is created and the frontend works even if the API is empty
+# 1. Define fallback record
 $matchData = @{
     PartitionKey = "NextMatch"
     RowKey       = "1"
@@ -38,9 +40,11 @@ $matchData = @{
     LastUpdated  = (Get-Date).ToString("o")
 }
 
-# 2. Overwrite fallback data ONLY if we got a valid fixture back
+# 2. Overwrite fallback data ONLY if we got valid fixtures back
 if ($response.response -and $response.response.Count -gt 0) {
-    $fixture = $response.response[0]
+    # The API returns a list. We sort it chronologically and grab the very first one ([0])
+    $upcomingFixtures = $response.response | Sort-Object -Property @{Expression = { $_.fixture.timestamp }; Ascending = $true }
+    $fixture = $upcomingFixtures[0]
     
     $opponent = if ($fixture.teams.away.name -eq "Manchester United") { $fixture.teams.home.name } else { $fixture.teams.away.name }
     $isHome = if ($fixture.teams.home.name -eq "Manchester United") { $true } else { $false }
@@ -55,9 +59,9 @@ if ($response.response -and $response.response.Count -gt 0) {
     Write-Output "Successfully parsed real match vs $opponent"
 }
 else {
-    Write-Warning "No live fixture data found. Pushing fallback data to ensure database and dashboard remain active."
+    Write-Warning "No live fixture data found in that date range. Pushing fallback data."
 }
 
-# 3. Push to Table Storage (This will automatically create 'manutdfixtures' if missing)
+# 3. Push to Table Storage
 Push-OutputBinding -Name tableOutput -Value $matchData
 Write-Output "Data successfully pushed to Azure Storage Table."
