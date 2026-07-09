@@ -1,53 +1,95 @@
 param($Timer)
 
-# API configuration
+# Configuring API parameters
 $apiKey = $env:API_FOOTBALL_KEY
-$teamId = 66
-$headers = @{ "X-Auth-Token" = $apiKey }
+$teamId = 66 
 
-Write-Output "Starting Manchester United Dashboard Aggregator (Stats Upgrade)..."
+$headers = @{
+    "X-Auth-Token" = $apiKey
+}
 
-# 1. Fetch Fixtures
-$matchesUri = "https://api.football-data.org/v4/teams/$teamId/matches?status=SCHEDULED"
-$matchesResponse = Invoke-RestMethod -Uri $matchesUri -Headers $headers -Method Get -TimeoutSec 15
+Write-Output "Starting Manchester United Dashboard Aggregator (Syntax Fix)..."
 
-# 2. Fetch Player Stats
+# Fetching all seasonal matches
+$matchesUri = "https://api.football-data.org/v4/teams/$teamId/matches"
+try {
+    $matchesResponse = Invoke-RestMethod -Uri $matchesUri -Headers $headers -Method Get -TimeoutSec 15
+    Write-Output "Matches payload received."
+}
+catch {
+    Write-Error "HTTP Request Failed (Matches): $_"
+    return
+}
+
+# Fetching top scorers
 $scorersUri = "https://api.football-data.org/v4/competitions/PL/scorers?limit=100"
-$scorersResponse = Invoke-RestMethod -Uri $scorersUri -Headers $headers -Method Get -TimeoutSec 15
+$scorersResponse = $null
+try {
+    $scorersResponse = Invoke-RestMethod -Uri $scorersUri -Headers $headers -Method Get -TimeoutSec 15
+    Write-Output "Scorers payload received."
+}
+catch {
+    Write-Warning "Failed to fetch scorers (rate limit or API issue). Stats will default to N/A."
+}
 
-# 3. Process Next Match with dynamic Venue logic
-$nextMatch = $matchesResponse.matches[0]
-$isNextHome = ($nextMatch.homeTeam.id -eq $teamId)
+# Parsing the next upcoming match
+$nextMatch = $null
+if ($matchesResponse.matches -and $matchesResponse.matches.Count -gt 0) {
+    $upcomingFixtures = $matchesResponse.matches | Where-Object { $_.status -in @("SCHEDULED", "TIMED") }
+    if ($upcomingFixtures -and $upcomingFixtures.Count -gt 0) {
+        $nextMatch = $upcomingFixtures[0]
+    }
+}
 
-# Capturing the actual venue name
-$venueName = if ($isNextHome) { "Old Trafford" } else { $nextMatch.venue ?: "Away Stadium" }
+# Compressing all fixtures into a JSON string
+$fixturesJson = "[]"
+if ($matchesResponse.matches) {
+    $minimalFixtures = foreach ($m in $matchesResponse.matches) {
+        $isHome = ($m.homeTeam.id -eq $teamId)
+        @{
+            date     = $m.utcDate
+            status   = $m.status
+            opponent = if ($isHome) { $m.awayTeam.name } else { $m.homeTeam.name }
+        }
+    }
+    $fixturesJson = $minimalFixtures | ConvertTo-Json -Compress
+}
 
-# 4. Process Top 5 Stats
-$muPlayers = $scorersResponse.scorers | Where-Object { $_.team.id -eq $teamId }
+# Extracting Manchester United player statistics
+$top5Scorers = @()
+$top5Assists = @()
 
-$top5Scorers = $muPlayers | Sort-Object goals -Descending | Select-Object -First 5 | ForEach-Object { 
-    @{ name = $_.player.name; count = $_.goals } 
-} | ConvertTo-Json -Compress
+if ($scorersResponse -and $scorersResponse.scorers) {
+    $muPlayers = $scorersResponse.scorers | Where-Object { $_.team.id -eq $teamId }
+    if ($muPlayers) {
+        $top5Scorers = $muPlayers | Sort-Object goals -Descending | Select-Object -First 5 | ForEach-Object { @{ name = $_.player.name; count = $_.goals } }
+        $top5Assists = $muPlayers | Sort-Object assists -Descending | Select-Object -First 5 | ForEach-Object { @{ name = $_.player.name; count = $_.assists } }
+    }
+}
 
-$top5Assists = $muPlayers | Sort-Object assists -Descending | Select-Object -First 5 | ForEach-Object { 
-    @{ name = $_.player.name; count = $_.assists } 
-} | ConvertTo-Json -Compress
+# Standard PowerShell logic for venue name
+$isNextHome = $true
+if ($nextMatch) { $isNextHome = ($nextMatch.homeTeam.id -eq $teamId) }
 
-# 5. Compress all fixtures for the table
-$allFixtures = $matchesResponse.matches | ForEach-Object { 
-    @{ date = $_.utcDate; opponent = $($_.awayTeam.name); isHome = ($_.homeTeam.id -eq $teamId) } 
-} | ConvertTo-Json -Compress
+$venueName = "Away Stadium"
+if ($isNextHome) {
+    $venueName = "Old Trafford"
+}
+elseif ($nextMatch.venue) {
+    $venueName = $nextMatch.venue
+}
 
-# 6. Bundle Dashboard State
+# Final Data Assembly
 $matchData = @{
     PartitionKey    = "NextMatch"
     RowKey          = [string]([long]::MaxValue - (Get-Date).Ticks)
-    Opponent        = if ($isNextHome) { $nextMatch.awayTeam.name } else { $nextMatch.homeTeam.name }
-    MatchDate       = $nextMatch.utcDate
+    Opponent        = if ($nextMatch) { if ($isNextHome) { $nextMatch.awayTeam.name } else { $nextMatch.homeTeam.name } } else { "TBD" }
+    MatchDate       = if ($nextMatch) { $nextMatch.utcDate } else { (Get-Date).ToString("o") }
     Venue           = $venueName
-    TopScorersJSON  = $top5Scorers
-    TopAssistsJSON  = $top5Assists
-    AllFixturesJSON = $allFixtures
+    TopScorersJSON  = $top5Scorers | ConvertTo-Json -Compress
+    TopAssistsJSON  = $top5Assists | ConvertTo-Json -Compress
+    AllFixturesJSON = $fixturesJson
 }
 
 Push-OutputBinding -Name tableOutput -Value $matchData
+Write-Output "Aggregated Dashboard Data successfully pushed to Azure Storage Table."
