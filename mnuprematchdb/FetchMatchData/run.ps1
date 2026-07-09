@@ -1,6 +1,7 @@
 param($Timer)
 
-$apiKey = $env:API_FOOTBALL_KEY
+# Ensure 'API_FOOTBALL_KEY' is set in your Azure Function Environment Variables
+$apiKey = $env:API_FOOTBALL_KEY 
 $teamId = 33
 
 $headers = @{
@@ -9,10 +10,14 @@ $headers = @{
 
 Write-Output "Starting Manchester United Matchday fetcher..."
 
-# THE WORKAROUND: Instead of 'next=1', we ask for a date range (which is allowed on the Free Plan)
+# Calculate the season dynamically (July onwards = current year, otherwise previous year)
+$currentYear = (Get-Date).Year
+$season = if ((Get-Date).Month -ge 7) { $currentYear } else { $currentYear - 1 }
+
+# THE WORKAROUND: Include 'season' parameter to satisfy Free Tier requirements
 $today = (Get-Date).ToString("yyyy-MM-dd")
 $future = (Get-Date).AddMonths(12).ToString("yyyy-MM-dd")
-$uri = "https://v3.football.api-sports.io/fixtures?team=$teamId&from=$today&to=$future"
+$uri = "https://v3.football.api-sports.io/fixtures?team=$teamId&season=$season&from=$today&to=$future"
 
 try {
     $response = Invoke-RestMethod -Uri $uri -Headers $headers -Method Get -TimeoutSec 15
@@ -30,7 +35,9 @@ catch {
 # 1. Define fallback record
 $matchData = @{
     PartitionKey = "NextMatch"
-    RowKey       = "1"
+    # RowKey must be unique every time to avoid '409 Conflict' errors.
+    # Using inverted ticks creates a unique key and sorts newest items at the top.
+    RowKey       = [string]([long]::MaxValue - (Get-Date).Ticks) 
     FixtureId    = "000000"
     MatchDate    = (Get-Date).AddDays(7).ToString("o")
     Opponent     = "TBD (Off-season or API Check)"
