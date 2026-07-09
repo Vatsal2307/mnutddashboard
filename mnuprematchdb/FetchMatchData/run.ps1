@@ -95,7 +95,7 @@ elseif ($nextMatch) {
 # Final Data Assembly
 $matchData = @{
     PartitionKey    = "NextMatch"
-    RowKey          = [string]([long]::MaxValue - (Get-Date).Ticks)
+    RowKey          = "latest"
     Opponent        = if ($nextMatch) { if ($isNextHome) { $nextMatch.awayTeam.name } else { $nextMatch.homeTeam.name } } else { "TBD" }
     MatchDate       = if ($nextMatch) { $nextMatch.utcDate } else { (Get-Date).ToString("o") }
     Venue           = $venueName
