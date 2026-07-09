@@ -4,155 +4,166 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Manchester United Matchday Hub</title>
+    <title>Man Utd Full Dashboard</title>
     <style>
         :root {
             --mu-red: #DA291C;
             --mu-black: #000000;
             --mu-white: #FFFFFF;
             --mu-dark-grey: #1A1A1A;
+            --mu-grey: #333333;
         }
 
         body {
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
             background-color: var(--mu-black);
             color: var(--mu-white);
             margin: 0;
-            padding: 0;
+            padding: 2rem;
             display: flex;
             justify-content: center;
-            align-items: center;
-            min-height: 100vh;
         }
 
-        .container {
-            text-align: center;
+        .dashboard {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 1.5rem;
+            width: 100%;
+            max-width: 800px;
+        }
+
+        .card {
             background: var(--mu-dark-grey);
-            padding: 2.5rem;
+            padding: 1.5rem;
             border-radius: 12px;
-            box-shadow: 0 8px 24px rgba(218, 41, 28, 0.2);
-            border-top: 5px solid var(--mu-red);
-            width: 90%;
-            max-width: 500px;
+            border-top: 4px solid var(--mu-red);
         }
 
-        h1 {
-            font-size: 1.8rem;
-            margin-bottom: 0.5rem;
+        .full-width {
+            grid-column: span 2;
+        }
+
+        h2 {
+            margin-top: 0;
+            font-size: 1.1rem;
+            color: #aaa;
             text-transform: uppercase;
-            letter-spacing: 1px;
         }
 
-        .badge {
-            background-color: var(--mu-red);
-            color: var(--mu-white);
-            padding: 0.25rem 0.75rem;
-            border-radius: 20px;
-            font-size: 0.8rem;
+        .stat-value {
+            font-size: 1.8rem;
             font-weight: bold;
-            display: inline-block;
-            margin-bottom: 1.5rem;
         }
 
-        .match-details {
-            font-size: 1.2rem;
-            margin: 1.5rem 0;
-        }
-
-        .opponent {
-            font-size: 2rem;
-            font-weight: bold;
-            color: var(--mu-white);
-            margin: 0.5rem 0;
-        }
-
-        .meta-info {
-            color: #AAAAAA;
+        .stat-label {
             font-size: 0.9rem;
+            color: #888;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
             margin-top: 1rem;
         }
 
-        .loading {
-            color: #888888;
-            font-style: italic;
+        th {
+            text-align: left;
+            color: #888;
+            padding: 0.5rem;
+            border-bottom: 1px solid #444;
         }
 
-        .error {
-            color: var(--mu-red);
-            font-weight: bold;
+        td {
+            padding: 0.5rem;
+            border-bottom: 1px solid #222;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 2rem;
         }
     </style>
 </head>
 
 <body>
+    <div class="dashboard" id="main-ui">
+        <div class="card full-width" id="next-match">
+            <h2>Next Match</h2>
+            <div id="hero-content">Loading match data...</div>
+        </div>
 
-    <div class="container">
-        <div class="badge" id="competition">GGMU</div>
-        <h1>Next Match</h1>
+        <div class="card">
+            <h2>Top Scorer</h2>
+            <div class="stat-value" id="scorer-name">...</div>
+            <div class="stat-label" id="scorer-goals">...</div>
+        </div>
 
-        <div id="dashboard-content">
-            <p class="loading">Fetching latest fixture data...</p>
+        <div class="card">
+            <h2>Top Assists</h2>
+            <div class="stat-value" id="assist-name">...</div>
+            <div class="stat-label" id="assist-count">...</div>
+        </div>
+
+        <div class="card full-width">
+            <h2>Season Fixtures</h2>
+            <div style="overflow-x: auto;">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Date</th>
+                            <th>Opponent</th>
+                            <th>Result/Status</th>
+                        </tr>
+                    </thead>
+                    <tbody id="fixtures-body"></tbody>
+                </table>
+            </div>
         </div>
     </div>
 
     <script>
-        // 1. EDIT THIS: Replace 'samanutddashABCD' with your ACTUAL Storage Account name
-        const tableBaseUrl = "https://samanutddash174b6ed4.table.core.windows.net/manutdfixtures";
+        // CONFIGURATION: Replace these with your Azure Storage details
+        const tableBaseUrl = "https://YOUR_STORAGE_ACCOUNT_NAME.table.core.windows.net/manutdfixtures";
+        const sasToken = "?YOUR_SAS_TOKEN_HERE";
 
-        // 2. EDIT THIS: PASTE YOUR SAS TOKEN HERE (Must start with '?')
-        const sasToken = "?sv=2026-02-06&ss=t&srt=sco&sp=r&se=2030-07-09T18:33:44Z&st=2026-07-09T10:40:44Z&spr=https&sig=KAX%2BtlL4OFfYy6sV5UxWNXIp6CUezAdX5h7o4hmnJJ4%3D";
-
-        async function fetchMatchData() {
-            const contentDiv = document.getElementById('dashboard-content');
-            const compBadge = document.getElementById('competition');
-
+        async function init() {
             try {
-                // Ensure token is formatted correctly for query string usage
-                const cleanSas = sasToken.startsWith('?') ? sasToken.substring(1) : sasToken;
+                // Fetch top 1 newest entity
+                const url = `${tableBaseUrl}()?$filter=PartitionKey eq 'NextMatch'&$top=1&${sasToken.substring(1)}`;
+                const response = await fetch(url, { headers: { 'Accept': 'application/json;odata=nometadata' } });
+                const data = (await response.json()).value[0];
 
-                // Fetch the newest row using $top=1
-                const queryUrl = `${tableBaseUrl}()?$filter=PartitionKey eq 'NextMatch'&$top=1&${cleanSas}`;
+                if (!data) throw new Error("No data found");
 
-                const response = await fetch(queryUrl, {
-                    headers: { 'Accept': 'application/json;odata=nometadata' }
-                });
-
-                if (!response.ok) {
-                    throw new Error(`Data access failed. Status: ${response.status}`);
-                }
-
-                const result = await response.json();
-
-                if (!result.value || result.value.length === 0) {
-                    throw new Error("No match records found.");
-                }
-
-                // Parse the newest record (first index)
-                const data = result.value[0];
-
-                const matchDate = new Date(data.MatchDate).toLocaleString([], {
-                    weekday: 'short', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'
-                });
-
-                compBadge.innerText = data.Competition;
-
-                contentDiv.innerHTML = `
-                    <div class="meta-info">${data.IsHomeMatch ? 'HOME' : 'AWAY'} MATCH</div>
-                    <div class="opponent">vs ${data.Opponent}</div>
-                    <div class="match-details">${matchDate}</div>
-                    <div class="meta-info">📍 ${data.Venue}</div>
+                // 1. Update Hero Card
+                document.getElementById('hero-content').innerHTML = `
+                    <div style="font-size: 2rem; font-weight: bold;">vs ${data.Opponent}</div>
+                    <div>${new Date(data.MatchDate).toDateString()} | ${data.Venue}</div>
                 `;
 
-            } catch (error) {
-                console.error("Dashboard Error:", error);
-                contentDiv.innerHTML = `
-                    <p class="error">Match center temporarily unavailable</p>
-                    <p style="font-size: 0.8rem; color: #888;">Check console for CORS or DNS issues.</p>
-                `;
+                // 2. Update Stats
+                document.getElementById('scorer-name').innerText = data.TopScorerName;
+                document.getElementById('scorer-goals').innerText = `${data.TopScorerGoals} Goals`;
+                document.getElementById('assist-name').innerText = data.TopAssistName;
+                document.getElementById('assist-count').innerText = `${data.TopAssistCount} Assists`;
+
+                // 3. Update Fixture Table
+                const fixtures = JSON.parse(data.AllFixturesJSON);
+                const tbody = document.getElementById('fixtures-body');
+                tbody.innerHTML = fixtures.map(f => `
+                    <tr>
+                        <td>${new Date(f.date).toLocaleDateString()}</td>
+                        <td>${f.opponent} ${f.isHome ? '(H)' : '(A)'}</td>
+                        <td>${f.status === 'FINISHED' ? `${f.scoreHome}-${f.scoreAway}` : 'Upcoming'}</td>
+                    </tr>
+                `).join('');
+
+            } catch (err) {
+                document.getElementById('main-ui').innerHTML = `<p class="loading">Error loading dashboard: ${err.message}</p>`;
             }
         }
 
-        fetchMatchData();
+        init();
     </script>
 </body>
 
