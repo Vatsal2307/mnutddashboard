@@ -1,126 +1,132 @@
 param($Timer)
 
-# Configuring API parameters
+# API configuration
 $apiKey = $env:API_FOOTBALL_KEY
-$teamId = 66 # Manchester United's ID on Football-Data.org
+$teamId = 66
+$headers = @{ "X-Auth-Token" = $apiKey }
 
-$headers = @{
-    "X-Auth-Token" = $apiKey
-}
+Write-Output "Starting Manchester United Dashboard Aggregator (Stats Upgrade)..."
 
-Write-Output "Starting Manchester United Dashboard Aggregator..."
+# 1. Fetch Fixtures
+$matchesUri = "https://api.football-data.org/v4/teams/$teamId/matches?status=SCHEDULED"
+$matchesResponse = Invoke-RestMethod -Uri $matchesUri -Headers $headers -Method Get -TimeoutSec 15
 
-# Fetching all seasonal matches
-$matchesUri = "https://api.football-data.org/v4/teams/$teamId/matches"
-try {
-    $matchesResponse = Invoke-RestMethod -Uri $matchesUri -Headers $headers -Method Get -TimeoutSec 15
-    Write-Output "Matches payload received."
-}
-catch {
-    Write-Error "HTTP Request Failed (Matches): $_"
-    return
-}
-
-# Fetching top scorers for the league
+# 2. Fetch Player Stats
 $scorersUri = "https://api.football-data.org/v4/competitions/PL/scorers?limit=100"
-$scorersResponse = $null
-try {
-    $scorersResponse = Invoke-RestMethod -Uri $scorersUri -Headers $headers -Method Get -TimeoutSec 15
-    Write-Output "Scorers payload received."
-}
-catch {
-    Write-Warning "Failed to fetch scorers (rate limit or API issue). Stats will default to N/A. Error: $_"
-}
+$scorersResponse = Invoke-RestMethod -Uri $scorersUri -Headers $headers -Method Get -TimeoutSec 15
 
-# Parsing the next upcoming match
-$nextMatch = $null
-if ($matchesResponse.matches -and $matchesResponse.matches.Count -gt 0) {
-    # Find the very first match that is SCHEDULED or TIMED
-    $upcomingFixtures = $matchesResponse.matches | Where-Object { $_.status -in @("SCHEDULED", "TIMED") }
-    if ($upcomingFixtures -and $upcomingFixtures.Count -gt 0) {
-        $nextMatch = $upcomingFixtures[0]
-    }
-}
+# 3. Process Next Match with dynamic Venue logic
+$nextMatch = $matchesResponse.matches[0]
+$isNextHome = ($nextMatch.homeTeam.id -eq $teamId)
 
-# Compressing all fixtures into a JSON string
-$fixturesJson = "[]"
-if ($matchesResponse.matches) {
-    # We strip out unnecessary heavy data and keep only what the dashboard table needs
-    $minimalFixtures = foreach ($m in $matchesResponse.matches) {
-        $isHome = ($m.homeTeam.id -eq $teamId)
-        @{
-            id          = $m.id
-            date        = $m.utcDate
-            status      = $m.status
-            opponent    = if ($isHome) { $m.awayTeam.name } else { $m.homeTeam.name }
-            isHome      = $isHome
-            scoreHome   = $m.score.fullTime.home
-            scoreAway   = $m.score.fullTime.away
-            competition = $m.competition.name
-        }
-    }
-    # Compress into a single string (Azure Table columns can hold 64KB, this will be ~5KB)
-    $fixturesJson = $minimalFixtures | ConvertTo-Json -Compress
-}
+# Capturing the actual venue name
+$venueName = if ($isNextHome) { "Old Trafford" } else { $nextMatch.venue ?: "Away Stadium" }
 
-# Extracting Manchester United player statistics
-$topScorerName = "N/A"
-$topScorerGoals = 0
-$topAssistName = "N/A"
-$topAssistCount = 0
+# 4. Process Top 5 Stats
+$muPlayers = $scorersResponse.scorers | Where-Object { $_.team.id -eq $teamId }
 
-if ($scorersResponse -and $scorersResponse.scorers) {
-    # Filter the Premier League top 100 to ONLY show Manchester United players
-    $muPlayers = $scorersResponse.scorers | Where-Object { $_.team.id -eq $teamId }
+$top5Scorers = $muPlayers | Sort-Object goals -Descending | Select-Object -First 5 | ForEach-Object { 
+    @{ name = $_.player.name; count = $_.goals } 
+} | ConvertTo-Json -Compress
 
-    if ($muPlayers -and $muPlayers.Count -gt 0) {
-        # Sort by goals and grab the highest
-        $topScorer = $muPlayers | Sort-Object -Property goals -Descending | Select-Object -First 1
-        if ($topScorer) {
-            $topScorerName = $topScorer.player.name
-            $topScorerGoals = $topScorer.goals
-        }
-        
-        # Sort by assists and grab the highest
-        $topAssister = $muPlayers | Sort-Object -Property assists -Descending | Select-Object -First 1
-        if ($topAssister -and $topAssister.assists -gt 0) {
-            $topAssistName = $topAssister.player.name
-            $topAssistCount = $topAssister.assists
-        }
-    }
-}
+$top5Assists = $muPlayers | Sort-Object assists -Descending | Select-Object -First 5 | ForEach-Object { 
+    @{ name = $_.player.name; count = $_.assists } 
+} | ConvertTo-Json -Compress
 
-# Building the final dashboard entity
-# Determine Next Match specific variables
-$isNextHome = if ($nextMatch) { $nextMatch.homeTeam.id -eq $teamId } else { $true }
-$nextOpponent = if ($nextMatch) { if ($isNextHome) { $nextMatch.awayTeam.name } else { $nextMatch.homeTeam.name } } else { "TBD (No upcoming matches)" }
-$nextVenue = if ($nextMatch) { if ($isNextHome) { "Old Trafford" } else { "Away Stadium" } } else { "TBD" }
-$nextDate = if ($nextMatch) { $nextMatch.utcDate } else { (Get-Date).AddDays(7).ToString("o") }
-$nextComp = if ($nextMatch) { $nextMatch.competition.name } else { "Premier League" }
+# 5. Compress all fixtures for the table
+$allFixtures = $matchesResponse.matches | ForEach-Object { 
+    @{ date = $_.utcDate; opponent = $($_.awayTeam.name); isHome = ($_.homeTeam.id -eq $teamId) } 
+} | ConvertTo-Json -Compress
 
+# 6. Bundle Dashboard State
 $matchData = @{
     PartitionKey    = "NextMatch"
     RowKey          = [string]([long]::MaxValue - (Get-Date).Ticks)
-    
-    # Next Match Highlight Card
-    Opponent        = $nextOpponent
-    MatchDate       = $nextDate
-    Venue           = $nextVenue
-    Competition     = $nextComp
-    IsHomeMatch     = $isNextHome
-    
-    # Stats Cards
-    TopScorerName   = $topScorerName
-    TopScorerGoals  = $topScorerGoals
-    TopAssistName   = $topAssistName
-    TopAssistCount  = $topAssistCount
-    
-    # Season Table Array
-    AllFixturesJSON = $fixturesJson
-    
-    LastUpdated     = (Get-Date).ToString("o")
+    Opponent        = if ($isNextHome) { $nextMatch.awayTeam.name } else { $nextMatch.homeTeam.name }
+    MatchDate       = $nextMatch.utcDate
+    Venue           = $venueName
+    TopScorersJSON  = $top5Scorers
+    TopAssistsJSON  = $top5Assists
+    AllFixturesJSON = $allFixtures
 }
 
-# Pushing data to Azure Table Storage
 Push-OutputBinding -Name tableOutput -Value $matchData
-Write-Output "Aggregated Dashboard Data successfully pushed to Azure Storage Table."
+```eof
+
+```html:index.html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Man Utd Full Dashboard</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+body { font-family: 'Inter', sans-serif; background: #000; }
+    .glass { background: rgba(26, 26, 26, 0.6); backdrop-filter: blur(15px); border: 1px solid rgba(255, 255, 255, 0.1); }
+    </style>
+    </head>
+
+    <body class="min-h-screen text-white relative p-6">
+    <!-- Background image -->
+    <div class="fixed inset-0 bg-cover bg-center -z-10" style="background-image: url('https://images.unsplash.com/photo-1628351424562-4217316719b0?q=80&w=2000');"></div>
+    <div class="fixed inset-0 bg-black/80 -z-10"></div>
+
+    <div class="container mx-auto max-w-4xl">
+    <div class="flex flex-col items-center mb-8">
+    <img src="https://upload.wikimedia.org/wikipedia/en/7/7a/Manchester_United_FC_crest.svg" class="w-20 h-20 mb-4 drop-shadow-xl">
+    <h1 class="text-2xl font-bold uppercase tracking-widest">Manchester United</h1>
+    </div>
+
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+    <!-- Next Match -->
+    <div class="glass p-6 rounded-2xl md:col-span-3 border-l-4 border-red-600">
+    <h2 class="text-xs text-gray-400 uppercase tracking-widest">Next Match</h2>
+    <div id="hero-content" class="text-3xl font-bold mt-2">Loading...</div>
+    </div>
+
+    <!-- Stats -->
+    <div class="glass p-6 rounded-2xl">
+    <h2 class="text-xs text-gray-400 uppercase tracking-widest mb-4">Top 5 Scorers</h2>
+    <div id="scorers-list" class="space-y-2 text-sm"></div>
+    </div>
+    <div class="glass p-6 rounded-2xl">
+    <h2 class="text-xs text-gray-400 uppercase tracking-widest mb-4">Top 5 Assists</h2>
+    <div id="assists-list" class="space-y-2 text-sm"></div>
+    </div>
+            
+    <!-- Fixtures -->
+    <div class="glass p-6 rounded-2xl md:col-span-1">
+    <h2 class="text-xs text-gray-400 uppercase tracking-widest mb-4">Season Schedule</h2>
+    <div id="fixtures-list" class="space-y-2 text-xs h-64 overflow-y-auto pr-2"></div>
+    </div>
+    </div>
+    </div>
+
+    <script>
+    const tableBaseUrl = "https://YOUR_STORAGE_ACCOUNT_NAME.table.core.windows.net/manutdfixtures";
+    const sasToken = "?YOUR_SAS_TOKEN_HERE"; 
+
+    async function init() {
+        try {
+            const response = await fetch(`$ { tableBaseUrl }()?$filter=PartitionKey eq 'NextMatch'&$top=1${sasToken}`);
+                const data = (await response.json()).value[0];
+                
+                document.getElementById('hero-content').innerHTML = `vs ${data.Opponent} <br><span class="text-lg text-gray-400">${new Date(data.MatchDate).toDateString()} @ ${data.Venue}</span>`;
+
+                // Render lists
+                const scorers = JSON.parse(data.TopScorersJSON);
+                document.getElementById('scorers-list').innerHTML = scorers.map(p => `<div class="flex justify-between border-b border-white/10 pb-1"><span>${p.name}</span><span class="text-red-400 font-bold">${p.count}</span></div>`).join('');
+
+                    const assists = JSON.parse(data.TopAssistsJSON);
+                    document.getElementById('assists-list').innerHTML = assists.map(p => `<div class="flex justify-between border-b border-white/10 pb-1"><span>${p.name}</span><span class="text-blue-400 font-bold">${p.count}</span></div>`).join('');
+
+                        const fixtures = JSON.parse(data.AllFixturesJSON);
+                        document.getElementById('fixtures-list').innerHTML = fixtures.map(f => `<div class="border-b border-white/5 py-1 flex justify-between"><span>${f.opponent}</span><span class="text-gray-500">${new Date(f.date).toLocaleDateString()}</span></div>`).join('');
+                        }
+                        catch(e) { console.error(e); }
+                    }
+                    init();
+                    </script>
+                    </body>
+                    </html>
