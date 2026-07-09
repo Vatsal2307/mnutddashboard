@@ -5,171 +5,112 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Man Utd Full Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
     <style>
-        :root {
-            --mu-red: #DA291C;
-            --mu-black: #000000;
-            --mu-white: #FFFFFF;
-            --mu-dark-grey: #1A1A1A;
-        }
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;700&display=swap');
 
         body {
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-            background-color: var(--mu-black);
-            color: var(--mu-white);
-            margin: 0;
-            padding: 2rem;
-            display: flex;
-            justify-content: center;
+            font-family: 'Inter', sans-serif;
         }
 
-        .dashboard {
-            display: grid;
-            grid-template-columns: repeat(2, 1fr);
-            gap: 1.5rem;
-            width: 100%;
-            max-width: 800px;
-        }
-
-        .card {
-            background: var(--mu-dark-grey);
-            padding: 1.5rem;
-            border-radius: 12px;
-            border-top: 4px solid var(--mu-red);
-        }
-
-        .full-width {
-            grid-column: span 2;
-        }
-
-        h2 {
-            margin-top: 0;
-            font-size: 1.1rem;
-            color: #aaa;
-            text-transform: uppercase;
-        }
-
-        .stat-value {
-            font-size: 1.8rem;
-            font-weight: bold;
-        }
-
-        .stat-label {
-            font-size: 0.9rem;
-            color: #888;
-        }
-
-        table {
-            width: 100%;
-            border-collapse: collapse;
-            margin-top: 1rem;
-        }
-
-        th {
-            text-align: left;
-            color: #888;
-            padding: 0.5rem;
-            border-bottom: 1px solid #444;
-        }
-
-        td {
-            padding: 0.5rem;
-            border-bottom: 1px solid #222;
-        }
-
-        .loading {
-            text-align: center;
-            padding: 2rem;
+        .glass {
+            background: rgba(26, 26, 26, 0.7);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
         }
     </style>
 </head>
 
-<body>
-    <div class="dashboard" id="main-ui">
-        <div class="card full-width" id="next-match">
-            <h2>Next Match</h2>
-            <div id="hero-content">Loading match data...</div>
+<body class="min-h-screen text-white relative">
+    <div class="fixed inset-0 bg-cover bg-center -z-10"
+        style="background-image: url('https://images.unsplash.com/photo-1628351424562-4217316719b0?q=80&w=2000');">
+    </div>
+    <div class="fixed inset-0 bg-black/70 -z-10"></div>
+
+    <div class="container mx-auto px-4 py-8 max-w-4xl" id="main-ui">
+        <div class="flex flex-col items-center justify-center mb-8">
+            <img src="https://upload.wikimedia.org/wikipedia/en/7/7a/Manchester_United_FC_crest.svg" alt="MUFC"
+                class="w-24 h-24 mb-4 drop-shadow-2xl">
+            <h1 class="text-3xl font-bold tracking-tighter uppercase">Manchester United</h1>
+            <div class="h-1 w-24 bg-red-600 mt-2"></div>
         </div>
 
-        <div class="card">
-            <h2>Top Scorer</h2>
-            <div class="stat-value" id="scorer-name">...</div>
-            <div class="stat-label" id="scorer-goals">...</div>
-        </div>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div class="glass p-6 rounded-2xl md:col-span-2 border-t-4 border-red-600" id="next-match">
+                <h2 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Next Match</h2>
+                <div id="hero-content" class="space-y-1">Loading match data...</div>
+            </div>
 
-        <div class="card">
-            <h2>Top Assists</h2>
-            <div class="stat-value" id="assist-name">...</div>
-            <div class="stat-label" id="assist-count">...</div>
-        </div>
+            <div class="glass p-6 rounded-2xl flex flex-col items-center justify-center">
+                <h2 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Top Scorer</h2>
+                <div class="text-3xl font-bold" id="scorer-name">...</div>
+                <div class="text-sm text-red-400 font-semibold" id="scorer-goals">...</div>
+            </div>
 
-        <div class="card full-width">
-            <h2>Season Fixtures</h2>
-            <div style="overflow-x: auto;">
-                <table>
-                    <thead>
-                        <tr>
-                            <th>Date</th>
-                            <th>Opponent</th>
-                            <th>Result/Status</th>
-                        </tr>
-                    </thead>
-                    <tbody id="fixtures-body"></tbody>
-                </table>
+            <div class="glass p-6 rounded-2xl flex flex-col items-center justify-center">
+                <h2 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Top Assists</h2>
+                <div class="text-3xl font-bold" id="assist-name">...</div>
+                <div class="text-sm text-red-400 font-semibold" id="assist-count">...</div>
+            </div>
+
+            <div class="glass p-6 rounded-2xl md:col-span-2">
+                <h2 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-4">Season Fixtures</h2>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-sm">
+                        <thead class="border-b border-gray-700">
+                            <tr>
+                                <th class="py-2 text-left">Date</th>
+                                <th class="py-2 text-left">Opponent</th>
+                                <th class="py-2 text-right">Result/Status</th>
+                            </tr>
+                        </thead>
+                        <tbody id="fixtures-body"></tbody>
+                    </table>
+                </div>
             </div>
         </div>
     </div>
 
     <script>
-        /* CONFIGURATION: IMPORTANT - REPLACE THE VALUES BELOW */
-
-        // UPDATE THIS: Replace 'YOUR_STORAGE_ACCOUNT_NAME' with your actual account name (e.g., samanutddash1234)
-        const tableBaseUrl = "https://samanutddash174b6ed4.table.core.windows.net/manutdfixtures";
-
-        // UPDATE THIS: Paste your actual SAS token (must include the leading ?)
-        const sasToken = "?sv=2026-02-06&ss=t&srt=sco&sp=r&se=2030-07-09T19:31:32Z&st=2026-07-09T11:16:32Z&spr=https&sig=arLaMHOJEi%2Fv1ro80cGY%2BAhJqwal1W7F5REZHrxS6Q8%3D";
+        const tableBaseUrl = "https://YOUR_STORAGE_ACCOUNT_NAME.table.core.windows.net/manutdfixtures";
+        const sasToken = "?YOUR_SAS_TOKEN_HERE";
 
         async function init() {
             try {
-                // Fetch the newest entity by querying the top 1
-                const url = `${tableBaseUrl}()?$filter=PartitionKey eq 'NextMatch'&$top=1&${sasToken.substring(1)}`;
+                // Fetch only the latest entry from the backend storage
+                const url = `${tableBaseUrl}()?$filter=PartitionKey eq 'NextMatch'&$top=1${sasToken}`;
                 const response = await fetch(url, { headers: { 'Accept': 'application/json;odata=nometadata' } });
 
-                if (!response.ok) throw new Error("Check your Storage Account Name/SAS Token configuration.");
+                if (!response.ok) throw new Error("Check SAS Token / CORS settings.");
 
                 const data = (await response.json()).value[0];
+                if (!data) throw new Error("No dashboard data found.");
 
-                if (!data) throw new Error("No dashboard data found in storage table.");
-
-                // 1. Update Hero Card
                 document.getElementById('hero-content').innerHTML = `
-                    <div style="font-size: 2rem; font-weight: bold;">vs ${data.Opponent}</div>
-                    <div>${new Date(data.MatchDate).toDateString()} | ${data.Venue}</div>
+                    <div class="text-4xl font-bold italic tracking-tight">vs ${data.Opponent}</div>
+                    <div class="text-gray-300">${new Date(data.MatchDate).toDateString()} | ${data.Venue}</div>
                 `;
 
-                // 2. Update Stats
                 document.getElementById('scorer-name').innerText = data.TopScorerName;
                 document.getElementById('scorer-goals').innerText = `${data.TopScorerGoals} Goals`;
                 document.getElementById('assist-name').innerText = data.TopAssistName;
                 document.getElementById('assist-count').innerText = `${data.TopAssistCount} Assists`;
 
-                // 3. Update Fixture Table
                 const fixtures = JSON.parse(data.AllFixturesJSON);
                 const tbody = document.getElementById('fixtures-body');
                 tbody.innerHTML = fixtures.map(f => `
-                    <tr>
-                        <td>${new Date(f.date).toLocaleDateString()}</td>
-                        <td>${f.opponent} ${f.isHome ? '(H)' : '(A)'}</td>
-                        <td>${f.status === 'FINISHED' ? `${f.scoreHome}-${f.scoreAway}` : 'Upcoming'}</td>
+                    <tr class="border-b border-gray-800/50 hover:bg-white/5 transition-colors">
+                        <td class="py-3">${new Date(f.date).toLocaleDateString()}</td>
+                        <td class="py-3">${f.opponent} ${f.isHome ? '<span class="text-xs text-gray-500">(H)</span>' : '<span class="text-xs text-gray-500">(A)</span>'}</td>
+                        <td class="py-3 text-right font-mono">${f.status === 'FINISHED' ? `${f.scoreHome}-${f.scoreAway}` : '<span class="text-gray-400">Upcoming</span>'}</td>
                     </tr>
                 `).join('');
 
             } catch (err) {
                 console.error(err);
-                document.getElementById('main-ui').innerHTML = `<p class="loading">Error loading dashboard: ${err.message}</p>`;
+                document.getElementById('main-ui').innerHTML = `<div class="glass p-10 rounded-2xl text-center text-red-400">Error loading dashboard: ${err.message}</div>`;
             }
         }
-
         init();
     </script>
 </body>
