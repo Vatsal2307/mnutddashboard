@@ -76,8 +76,8 @@ if ($isNextHome) {
     $venueName = "Old Trafford"
 }
 elseif ($nextMatch) {
-    # Fetch the away team's details to get their stadium name
-    $awayTeamId = $nextMatch.awayTeam.id
+    # MU is the away team — fetch the HOME team's (opponent's) venue
+    $awayTeamId = $nextMatch.homeTeam.id
     try {
         $awayTeamUri = "https://api.football-data.org/v4/teams/$awayTeamId"
         $awayTeamResponse = Invoke-RestMethod -Uri $awayTeamUri -Headers $headers -Method Get -TimeoutSec 15
