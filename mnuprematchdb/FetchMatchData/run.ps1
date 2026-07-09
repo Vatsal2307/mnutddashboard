@@ -1,31 +1,24 @@
 param($Timer)
 
-# Ensure 'API_FOOTBALL_KEY' is set in your Azure Function Environment Variables
+# Grabbing the new Football-Data.org API Key
 $apiKey = $env:API_FOOTBALL_KEY 
-$teamId = 33
 
+# Manchester United's ID on Football-Data.org is 66
+$teamId = 66
+
+# Football-Data uses a different header name for auth
 $headers = @{
-    "x-apisports-key" = $apiKey
+    "X-Auth-Token" = $apiKey
 }
 
-Write-Output "Starting Manchester United Matchday fetcher..."
+Write-Output "Starting Manchester United Matchday fetcher (using Football-Data.org)..."
 
-# Calculate the season dynamically (July onwards = current year, otherwise previous year)
-$currentYear = (Get-Date).Year
-$season = if ((Get-Date).Month -ge 7) { $currentYear } else { $currentYear - 1 }
-
-# THE WORKAROUND: Include 'season' parameter to satisfy Free Tier requirements
-$today = (Get-Date).ToString("yyyy-MM-dd")
-$future = (Get-Date).AddMonths(12).ToString("yyyy-MM-dd")
-$uri = "https://v3.football.api-sports.io/fixtures?team=$teamId&season=$season&from=$today&to=$future"
+# This API has a brilliant 'status=SCHEDULED' filter, so we don't even need dates!
+$uri = "https://api.football-data.org/v4/teams/$teamId/matches?status=SCHEDULED"
 
 try {
     $response = Invoke-RestMethod -Uri $uri -Headers $headers -Method Get -TimeoutSec 15
-    Write-Output "API payload received. Checking for internal errors..."
-    
-    if ($response.errors -and $response.errors.Count -gt 0) {
-        Write-Warning "API-Sports Error: $($response.errors | ConvertTo-Json -Compress)"
-    }
+    Write-Output "API payload received."
 }
 catch {
     Write-Error "HTTP Request Failed: $_"
@@ -35,38 +28,36 @@ catch {
 # 1. Define fallback record
 $matchData = @{
     PartitionKey = "NextMatch"
-    # RowKey must be unique every time to avoid '409 Conflict' errors.
-    # Using inverted ticks creates a unique key and sorts newest items at the top.
     RowKey       = [string]([long]::MaxValue - (Get-Date).Ticks) 
     FixtureId    = "000000"
     MatchDate    = (Get-Date).AddDays(7).ToString("o")
-    Opponent     = "TBD (Off-season or API Check)"
-    Venue        = "Old Trafford"
+    Opponent     = "TBD (No upcoming matches scheduled)"
+    Venue        = "TBD"
     Competition  = "Premier League"
     IsHomeMatch  = $true
     LastUpdated  = (Get-Date).ToString("o")
 }
 
-# 2. Overwrite fallback data ONLY if we got valid fixtures back
-if ($response.response -and $response.response.Count -gt 0) {
-    # The API returns a list. We sort it chronologically and grab the very first one ([0])
-    $upcomingFixtures = $response.response | Sort-Object -Property @{Expression = { $_.fixture.timestamp }; Ascending = $true }
-    $fixture = $upcomingFixtures[0]
+# 2. Overwrite fallback data ONLY if we got valid scheduled matches back
+if ($response.matches -and $response.matches.Count -gt 0) {
+    # The API returns them in chronological order, so [0] is the very next match
+    $fixture = $response.matches[0]
     
-    $opponent = if ($fixture.teams.away.name -eq "Manchester United") { $fixture.teams.home.name } else { $fixture.teams.away.name }
-    $isHome = if ($fixture.teams.home.name -eq "Manchester United") { $true } else { $false }
+    $isHome = if ($fixture.homeTeam.name -match "Manchester United") { $true } else { $false }
+    $opponent = if ($isHome) { $fixture.awayTeam.name } else { $fixture.homeTeam.name }
     
-    $matchData.FixtureId = $fixture.fixture.id.ToString()
-    $matchData.MatchDate = $fixture.fixture.date
+    $matchData.FixtureId = $fixture.id.ToString()
+    $matchData.MatchDate = $fixture.utcDate
     $matchData.Opponent = $opponent
-    $matchData.Venue = $fixture.fixture.venue.name
-    $matchData.Competition = $fixture.league.name
+    # This API doesn't always list the stadium, so we infer it based on Home/Away
+    $matchData.Venue = if ($isHome) { "Old Trafford" } else { "Away Stadium" } 
+    $matchData.Competition = $fixture.competition.name
     $matchData.IsHomeMatch = $isHome
     
-    Write-Output "Successfully parsed real match vs $opponent"
+    Write-Output "Successfully parsed real upcoming match vs $opponent"
 }
 else {
-    Write-Warning "No live fixture data found in that date range. Pushing fallback data."
+    Write-Warning "No scheduled matches found. Pushing fallback data."
 }
 
 # 3. Push to Table Storage
