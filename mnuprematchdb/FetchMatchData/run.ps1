@@ -1,39 +1,30 @@
 param($Timer)
 
-# ── Azure Table upsert (InsertOrMerge via REST — bypasses broken output binding) ──
+# ── Azure Table upsert via pre-generated SAS token (no HMAC signing needed) ───
 function Invoke-TableUpsert {
     param([string]$TableName, [hashtable]$Entity)
 
+    $sas = $env:STORAGE_TABLE_SAS
+    if (-not $sas) { throw "STORAGE_TABLE_SAS app setting is not set" }
+
     $connStr = $env:AzureWebJobsStorage
-    if (-not $connStr) { throw "AzureWebJobsStorage env var not set" }
+    if ($connStr -match 'AccountName=([^;]+)') { $accountName = $matches[1] } else { throw "No AccountName in connection string" }
 
-    # Parse AccountName and AccountKey from connection string
-    if ($connStr -match 'AccountName=([^;]+)') { $accountName = $matches[1] } else { throw "No AccountName" }
-    if ($connStr -match 'AccountKey=([^;]+)')  { $accountKey  = $matches[1] } else { throw "No AccountKey"  }
+    $pk   = $Entity['PartitionKey']
+    $rk   = $Entity['RowKey']
 
-    $pk       = $Entity['PartitionKey']
-    $rk       = $Entity['RowKey']
-    $resource = "$TableName(PartitionKey='$pk',RowKey='$rk')"
-    $url      = "https://$accountName.table.core.windows.net/$resource"
-    $msDate   = [DateTime]::UtcNow.ToString('R')
+    # InsertOrMerge entity URL with SAS token — no Authorization header needed
+    $url  = "https://$accountName.table.core.windows.net/$TableName(PartitionKey='$pk',RowKey='$rk')?$sas"
 
-    # SharedKeyLite HMAC-SHA256 signature
-    $stringToSign = "${msDate}`n/$accountName/$resource"
-    $keyBytes     = [Convert]::FromBase64String($accountKey)
-    $hmac         = New-Object System.Security.Cryptography.HMACSHA256 (,$keyBytes)
-    $sig          = [Convert]::ToBase64String($hmac.ComputeHash([Text.Encoding]::UTF8.GetBytes($stringToSign)))
-
-    $authHeaders = @{
-        'Authorization' = "SharedKeyLite ${accountName}:${sig}"
-        'x-ms-date'     = $msDate
-        'x-ms-version'  = '2019-02-02'
-        'Accept'        = 'application/json;odata=nometadata'
+    $headers = @{
+        'x-ms-version' = '2019-02-02'
+        'Accept'       = 'application/json;odata=nometadata'
     }
 
     # MERGE without If-Match = InsertOrMerge (true upsert)
     $body = $Entity | ConvertTo-Json -Compress -Depth 5
-    Invoke-RestMethod -Uri $url -Method MERGE -Headers $authHeaders -Body $body -ContentType 'application/json'
-    Write-Output "Table entity upserted: $pk / $rk"
+    Invoke-RestMethod -Uri $url -Method MERGE -Headers $headers -Body $body -ContentType 'application/json'
+    Write-Output "Table entity upserted via SAS: $pk / $rk"
 }
 
 # ── API credentials & team IDs ──────────────────────────────────────────────
