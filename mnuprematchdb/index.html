@@ -80,7 +80,15 @@
                 const data = json.value[0];
 
                 // ... (rest of your rendering logic remains the same) ...
-                hero.innerHTML = `vs ${data.Opponent} <br><span class="text-lg text-gray-400">${new Date(data.MatchDate).toDateString()} @ ${data.Venue}</span>`;
+                // Build competition badge for hero
+                const compBadge = data.Competition
+                    ? `<span class="text-xs font-semibold uppercase tracking-widest px-2 py-0.5 rounded-full bg-red-600/30 text-red-400 border border-red-600/50">${data.Competition}</span>`
+                    : '';
+                const homeAway = data.IsHome === 'True' ? '🏠 Home' : '✈️ Away';
+                hero.innerHTML = `
+                    <div class="flex items-center gap-2 mb-1">${compBadge}<span class="text-xs text-gray-500">${homeAway}</span></div>
+                    vs ${data.Opponent}<br>
+                    <span class="text-lg text-gray-400">${new Date(data.MatchDate).toDateString()} @ ${data.Venue}</span>`;
 
                 // Render lists (with fallbacks for empty/undefined data)
                 const scorersData = JSON.parse(data.TopScorersJSON || '[]');
@@ -95,7 +103,16 @@
 
                 const fixturesData = JSON.parse(data.AllFixturesJSON || '[]');
                 document.getElementById('fixtures-list').innerHTML = fixturesData.length > 0
-                    ? fixturesData.map(f => `<div class="border-b border-white/5 py-1 flex justify-between"><span>${f.opponent}</span><span class="text-gray-500">${new Date(f.date).toLocaleDateString()}</span></div>`).join('')
+                    ? fixturesData.map(f => {
+                        const isHome = f.isHome === true || f.isHome === 'true';
+                        const statusColor = f.status === 'FINISHED' ? 'text-gray-600' : 'text-green-400';
+                        const ha = isHome ? '<span class="text-blue-400">H</span>' : '<span class="text-yellow-400">A</span>';
+                        const comp = f.competition ? `<span class="text-gray-600 text-xs">${f.competition.replace('UEFA ', '').replace('Premier League', 'PL')}</span>` : '';
+                        return `<div class="border-b border-white/5 py-1 flex justify-between items-center gap-1">
+                            <span>${ha} ${f.opponent}</span>
+                            <div class="flex gap-2 items-center">${comp}<span class="${statusColor}">${new Date(f.date).toLocaleDateString()}</span></div>
+                        </div>`;
+                    }).join('')
                     : '<div class="text-gray-500 text-xs italic">Schedule unavailable</div>';
 
             } catch (e) {

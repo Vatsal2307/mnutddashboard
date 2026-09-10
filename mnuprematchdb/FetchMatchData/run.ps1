@@ -50,9 +50,11 @@ if ($matchesResponse.matches) {
     $minimalFixtures = foreach ($m in $matchesResponse.matches) {
         $isHome = ($m.homeTeam.id -eq $teamId)
         @{
-            date     = $m.utcDate
-            status   = $m.status
-            opponent = if ($isHome) { $m.awayTeam.name } else { $m.homeTeam.name }
+            date        = $m.utcDate
+            status      = $m.status
+            opponent    = if ($isHome) { $m.awayTeam.name } else { $m.homeTeam.name }
+            competition = $m.competition.name
+            isHome      = $isHome
         }
     }
     $fixturesJson = $minimalFixtures | ConvertTo-Json -Compress
@@ -102,6 +104,8 @@ $matchData = @{
     RowKey          = "CurrentDashboardState"
     Opponent        = if ($nextMatch) { if ($isNextHome) { $nextMatch.awayTeam.name } else { $nextMatch.homeTeam.name } } else { "TBD" }
     MatchDate       = if ($nextMatch) { $nextMatch.utcDate } else { (Get-Date).ToString("o") }
+    Competition     = if ($nextMatch) { $nextMatch.competition.name } else { "" }
+    IsHome          = $isNextHome.ToString()
     Venue           = $venueName
     TopScorersJSON  = $top5Scorers | ConvertTo-Json -Compress
     TopAssistsJSON  = $top5Assists | ConvertTo-Json -Compress
