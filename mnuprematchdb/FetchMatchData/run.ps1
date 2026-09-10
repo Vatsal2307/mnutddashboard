@@ -43,19 +43,20 @@ $season   = (Get-Date).Year
 if ((Get-Date).Month -lt 7) { $season = $season - 1 }
 $dateFrom = (Get-Date -Format "yyyy-MM-dd")
 
-# ── 1. Upcoming domestic fixtures (football-data.org) ───────────────────────
+# ── 1. All domestic fixtures for the season (football-data.org) ─────────────
+# NOTE: dateFrom requires dateTo - use no date filter and split in code instead
 $matchesResponse = $null
 try {
-    $upcomingUri     = "https://api.football-data.org/v4/teams/$teamId/matches?season=$season&dateFrom=$dateFrom&status=SCHEDULED,TIMED"
-    $matchesResponse = Invoke-RestMethod -Uri $upcomingUri -Headers $fdHeaders -Method Get -TimeoutSec 15
-    Write-Output "Upcoming matches: $($matchesResponse.matches.Count)"
+    $allMatchesUri   = "https://api.football-data.org/v4/teams/$teamId/matches?season=$season"
+    $matchesResponse = Invoke-RestMethod -Uri $allMatchesUri -Headers $fdHeaders -Method Get -TimeoutSec 15
+    Write-Output "Season matches fetched: $($matchesResponse.matches.Count)"
 }
 catch {
-    Write-Error "Upcoming matches request failed: $_"
+    Write-Error "Matches request failed: $_"
     return
 }
 
-# ── 2. Last finished match + goal events (football-data.org) ────────────────
+# ── 2. Last finished match + goal events ────────────────────────────────────
 $lastMatch       = $null
 $lastOpponent    = "N/A"
 $lastScore       = "N/A"
@@ -63,15 +64,11 @@ $lastMatchDate   = ""
 $lastCompetition = ""
 $lastGoalsJson   = "[]"
 
-try {
-    $finishedUri         = "https://api.football-data.org/v4/teams/$teamId/matches?season=$season&status=FINISHED"
-    $finishedResponse    = Invoke-RestMethod -Uri $finishedUri -Headers $fdHeaders -Method Get -TimeoutSec 15
-    $lastMatch           = $finishedResponse.matches | Sort-Object { [datetime]$_.utcDate } -Descending | Select-Object -First 1
-    Write-Output "Last finished match found: $($lastMatch.id)"
-}
-catch {
-    Write-Warning "Could not fetch finished matches: $_"
-}
+$lastMatch = $matchesResponse.matches |
+    Where-Object { $_.status -eq "FINISHED" } |
+    Sort-Object { [datetime]$_.utcDate } -Descending |
+    Select-Object -First 1
+if ($lastMatch) { Write-Output "Last finished match: $($lastMatch.id) vs $($lastMatch.awayTeam.name)" }
 
 if ($lastMatch) {
     $lastIsHome      = ($lastMatch.homeTeam.id -eq $teamId)
@@ -154,10 +151,14 @@ $nextDate     = (Get-Date).ToString("o")
 $nextComp     = ""
 $venueName    = "Old Trafford"
 
-# Earliest domestic upcoming
+# Earliest domestic upcoming (utcDate >= today)
+$nowUtc = (Get-Date).ToUniversalTime()
 $domesticNext = $null
 if ($matchesResponse.matches -and $matchesResponse.matches.Count -gt 0) {
-    $domesticNext = $matchesResponse.matches | Sort-Object { [datetime]$_.utcDate } | Select-Object -First 1
+    $domesticNext = $matchesResponse.matches |
+        Where-Object { [datetime]$_.utcDate -ge $nowUtc } |
+        Sort-Object { [datetime]$_.utcDate } |
+        Select-Object -First 1
 }
 
 # Earliest European upcoming
