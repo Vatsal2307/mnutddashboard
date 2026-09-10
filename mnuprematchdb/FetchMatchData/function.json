@@ -5,14 +5,6 @@
             "type": "timerTrigger",
             "direction": "in",
             "schedule": "0 0 */6 * * *"
-        },
-        {
-            "name": "tableOutput",
-            "type": "table",
-            "tableName": "manutdfixtures",
-            "connection": "AzureWebJobsStorage",
-            "direction": "out",
-            "operation": "merge"
         }
     ]
 }

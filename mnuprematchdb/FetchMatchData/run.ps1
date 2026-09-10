@@ -1,10 +1,46 @@
 param($Timer)
 
+# ── Azure Table upsert (InsertOrMerge via REST — bypasses broken output binding) ──
+function Invoke-TableUpsert {
+    param([string]$TableName, [hashtable]$Entity)
+
+    $connStr = $env:AzureWebJobsStorage
+    if (-not $connStr) { throw "AzureWebJobsStorage env var not set" }
+
+    # Parse AccountName and AccountKey from connection string
+    if ($connStr -match 'AccountName=([^;]+)') { $accountName = $matches[1] } else { throw "No AccountName" }
+    if ($connStr -match 'AccountKey=([^;]+)')  { $accountKey  = $matches[1] } else { throw "No AccountKey"  }
+
+    $pk       = $Entity['PartitionKey']
+    $rk       = $Entity['RowKey']
+    $resource = "$TableName(PartitionKey='$pk',RowKey='$rk')"
+    $url      = "https://$accountName.table.core.windows.net/$resource"
+    $msDate   = [DateTime]::UtcNow.ToString('R')
+
+    # SharedKeyLite HMAC-SHA256 signature
+    $stringToSign = "${msDate}`n/$accountName/$resource"
+    $keyBytes     = [Convert]::FromBase64String($accountKey)
+    $hmac         = New-Object System.Security.Cryptography.HMACSHA256 (,$keyBytes)
+    $sig          = [Convert]::ToBase64String($hmac.ComputeHash([Text.Encoding]::UTF8.GetBytes($stringToSign)))
+
+    $authHeaders = @{
+        'Authorization' = "SharedKeyLite ${accountName}:${sig}"
+        'x-ms-date'     = $msDate
+        'x-ms-version'  = '2019-02-02'
+        'Accept'        = 'application/json;odata=nometadata'
+    }
+
+    # MERGE without If-Match = InsertOrMerge (true upsert)
+    $body = $Entity | ConvertTo-Json -Compress -Depth 5
+    Invoke-RestMethod -Uri $url -Method MERGE -Headers $authHeaders -Body $body -ContentType 'application/json'
+    Write-Output "Table entity upserted: $pk / $rk"
+}
+
 # ── API credentials & team IDs ──────────────────────────────────────────────
-$apiKey          = $env:API_FOOTBALL_KEY     # football-data.org
-$apiSportsKey    = $env:API_SPORTS_KEY       # api-sports.io
-$teamId          = 66                        # Man United in football-data.org
-$apiSportsTeamId = 33                        # Man United in API-Sports
+$apiKey          = $env:API_FOOTBALL_KEY
+$apiSportsKey    = $env:API_SPORTS_KEY
+$teamId          = 66
+$apiSportsTeamId = 33
 
 $fdHeaders = @{ "X-Auth-Token"    = $apiKey }
 $asHeaders = @{ "x-apisports-key" = $apiSportsKey }
@@ -229,5 +265,11 @@ $matchData = @{
     AllFixturesJSON  = $fixturesJson
 }
 
-Push-OutputBinding -Name tableOutput -Value $matchData
-Write-Output "Dashboard data pushed to Azure Storage Table successfully."
+# Write directly via REST (InsertOrMerge upsert — bypasses broken output binding)
+try {
+    Invoke-TableUpsert -TableName "manutdfixtures" -Entity $matchData
+    Write-Output "Dashboard data upserted to Azure Storage Table successfully."
+}
+catch {
+    Write-Error "Table upsert failed: $_"
+}
