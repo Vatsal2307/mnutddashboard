@@ -104,12 +104,19 @@
                 const fixturesData = JSON.parse(data.AllFixturesJSON || '[]');
                 document.getElementById('fixtures-list').innerHTML = fixturesData.length > 0
                     ? fixturesData.map(f => {
-                        const isHome = f.isHome === true || f.isHome === 'true';
+                        // Only show H/A badge if field exists (guards against stale pre-update data)
+                        let ha = '';
+                        if (f.isHome !== undefined && f.isHome !== null) {
+                            ha = (f.isHome === true || f.isHome === 'true')
+                                ? '<span class="text-blue-400 font-bold text-xs">H</span>'
+                                : '<span class="text-yellow-400 font-bold text-xs">A</span>';
+                        }
                         const statusColor = f.status === 'FINISHED' ? 'text-gray-600' : 'text-green-400';
-                        const ha = isHome ? '<span class="text-blue-400">H</span>' : '<span class="text-yellow-400">A</span>';
-                        const comp = f.competition ? `<span class="text-gray-600 text-xs">${f.competition.replace('UEFA ', '').replace('Premier League', 'PL')}</span>` : '';
+                        const compMap = { 'Premier League': 'PL', 'FA Cup': 'FA Cup', 'EFL Cup': 'EFL Cup', 'UEFA Europa League': 'UEL', 'UEFA Champions League': 'UCL', 'UEFA Conference League': 'UECL' };
+                        const compLabel = f.competition ? (compMap[f.competition] || f.competition) : '';
+                        const comp = compLabel ? `<span class="text-gray-500 text-xs border border-white/10 rounded px-1">${compLabel}</span>` : '';
                         return `<div class="border-b border-white/5 py-1 flex justify-between items-center gap-1">
-                            <span>${ha} ${f.opponent}</span>
+                            <span class="flex items-center gap-1">${ha}<span>${f.opponent}</span></span>
                             <div class="flex gap-2 items-center">${comp}<span class="${statusColor}">${new Date(f.date).toLocaleDateString()}</span></div>
                         </div>`;
                     }).join('')
