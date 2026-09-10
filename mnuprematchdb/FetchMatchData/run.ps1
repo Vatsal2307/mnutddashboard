@@ -10,11 +10,16 @@ $headers = @{
 
 Write-Output "Starting Manchester United Dashboard Aggregator (Syntax Fix)..."
 
-# Fetching all seasonal matches
-$matchesUri = "https://api.football-data.org/v4/teams/$teamId/matches"
+# Determine current football season (seasons start in Aug, e.g. 2025 = 2025/26)
+$season = (Get-Date).Year
+if ((Get-Date).Month -lt 7) { $season = $season - 1 }
+$dateFrom = (Get-Date -Format "yyyy-MM-dd")
+
+# Fetching only current-season upcoming matches (pre-filtered by API)
+$matchesUri = "https://api.football-data.org/v4/teams/$teamId/matches?season=$season&dateFrom=$dateFrom&status=SCHEDULED,TIMED"
 try {
     $matchesResponse = Invoke-RestMethod -Uri $matchesUri -Headers $headers -Method Get -TimeoutSec 15
-    Write-Output "Matches payload received."
+    Write-Output "Matches payload received. Count: $($matchesResponse.matches.Count)"
 }
 catch {
     Write-Error "HTTP Request Failed (Matches): $_"
@@ -32,13 +37,11 @@ catch {
     Write-Warning "Failed to fetch scorers (rate limit or API issue). Stats will default to N/A."
 }
 
-# Parsing the next upcoming match
+# Parsing the next upcoming match — API already filtered by dateFrom + status, so first result is correct
 $nextMatch = $null
 if ($matchesResponse.matches -and $matchesResponse.matches.Count -gt 0) {
-    $upcomingFixtures = $matchesResponse.matches | Where-Object { $_.status -in @("SCHEDULED", "TIMED") }
-    if ($upcomingFixtures -and $upcomingFixtures.Count -gt 0) {
-        $nextMatch = $upcomingFixtures[0]
-    }
+    # Sort ascending by utcDate to ensure the earliest upcoming match is first
+    $nextMatch = $matchesResponse.matches | Sort-Object { [datetime]$_.utcDate } | Select-Object -First 1
 }
 
 # Compressing all fixtures into a JSON string
@@ -62,8 +65,9 @@ $top5Assists = @()
 if ($scorersResponse -and $scorersResponse.scorers) {
     $muPlayers = $scorersResponse.scorers | Where-Object { $_.team.id -eq $teamId }
     if ($muPlayers) {
-        $top5Scorers = $muPlayers | Sort-Object goals -Descending | Select-Object -First 5 | ForEach-Object { @{ name = $_.player.name; count = $_.goals } }
-        $top5Assists = $muPlayers | Sort-Object assists -Descending | Select-Object -First 5 | ForEach-Object { @{ name = $_.player.name; count = $_.assists } }
+        $top5Scorers = $muPlayers | Sort-Object { [int]($_.goals ?? 0) } -Descending | Select-Object -First 5 | ForEach-Object { @{ name = $_.player.name; count = [int]($_.goals ?? 0) } }
+        # Assists can be null in the API response — guard against null before sorting
+        $top5Assists = $muPlayers | Where-Object { $_.assists -ne $null } | Sort-Object { [int]$_.assists } -Descending | Select-Object -First 5 | ForEach-Object { @{ name = $_.player.name; count = [int]$_.assists } }
     }
 }
 
